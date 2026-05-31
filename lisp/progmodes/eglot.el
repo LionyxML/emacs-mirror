@@ -537,6 +537,15 @@ or file operation kinds not in the alist."
   "If non-nil, activate Eglot in cross-referenced non-project files."
   :type 'boolean)
 
+(declare-function treesit-grammar-location "treesit.c")
+
+(defun eglot--builtin-mdown-p ()
+  (if (fboundp 'markdown-ts-available-p)
+      (markdown-ts-available-p)
+    (and (fboundp 'markdown-ts-view-mode)
+         (fboundp 'treesit-grammar-location)
+         (treesit-grammar-location 'markdown))))
+
 (defcustom eglot-documentation-renderer (cond ((eglot--builtin-mdown-p)
                                                'markdown-ts-view-mode)
                                               ((fboundp 'gfm-view-mode)
@@ -737,13 +746,6 @@ This can be useful when using docker to run a language server.")
   "Like Emacs 27's `executable-find', ignore REMOTE on Emacs 26."
   (if (>= emacs-major-version 27) (executable-find command remote)
     (executable-find command)))
-
-(declare-function treesit-grammar-location "treesit.c")
-
-(defun eglot--builtin-mdown-p ()
-  (and (fboundp 'markdown-ts-view-mode)
-       (fboundp 'treesit-grammar-location)
-       (treesit-grammar-location 'markdown)))
 
 (defun eglot--accepted-formats ()
   (if (and (not (eq t eglot-documentation-renderer))
@@ -2292,13 +2294,16 @@ If MODE, force MODE to be used for fontifying MARKUP."
                               ("markdown" nil)
                               ("plaintext" 'text-mode)
                               (_ major-mode))))))
-    (with-temp-buffer
-      (setq-local markdown-fontify-code-blocks-natively t)
-      (insert string)
-      (let ((inhibit-message t) (message-log-max nil))
-        (ignore-errors (delay-mode-hooks (funcall render)))
-        (font-lock-ensure)
-        (string-trim (funcall extract))))))
+    (if (and (eq render #'markdown-ts-view-mode)
+             (fboundp 'markdown-ts-render-markup))
+        (string-trim (markdown-ts-render-markup string))
+      (with-temp-buffer
+        (setq-local markdown-fontify-code-blocks-natively t)
+        (insert string)
+        (let ((inhibit-message t) (message-log-max nil))
+          (ignore-errors (delay-mode-hooks (funcall render)))
+          (font-lock-ensure)
+          (string-trim (funcall extract)))))))
 
 (defun eglot--read-server (prompt &optional dont-if-just-the-one)
   "Read a running Eglot server from minibuffer using PROMPT.
